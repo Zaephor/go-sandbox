@@ -1,0 +1,66 @@
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+jobs:
+  vars:
+    runs-on: ubuntu-latest
+    outputs:
+      include: "${{ steps.vars.outputs.include }}"
+    steps:
+      - name: vars
+        id: vars
+        run: |
+          set -x
+          MATRIX_EASY=$(echo '{ "os": ["freebsd","windows"], "arch": [386,"amd64","arm64"]}' | jq -c --raw-output '( .["os"] as $a | .["arch"] as $b | [{"go_os": $a[], "go_arch": $b[] }] )')
+          MATRIX_DARWIN=$(echo '{ "os": ["darwin"], "arch": ["amd64","arm64"]}' | jq -c --raw-output '( .["os"] as $a | .["arch"] as $b | [{"go_os": $a[], "go_arch": $b[] }] )')
+          MATRIX_LINUX=$(echo '{ "os": ["linux"], "arch": [386,"amd64","arm64","mips","mipsle","mips64","mips64le","ppc64","ppc64le","riscv64"]}' | jq -c --raw-output '( .["os"] as $a | .["arch"] as $b | [{"go_os": $a[], "go_arch": $b[] }] )')
+          MATRIX_LINUX_ARM=$(echo '{ "os": ["linux"], "arch": ["arm"], "version": [5,6,7]}' | jq -c --raw-output '( .["os"] as $a | .["arch"] as $b | .["version"] as $c | [{"go_os": $a[], "go_arch": $b[], "go_arm": $c[] }] )')
+          MATRIX_ANDROID=$(echo '{
+            "common": {"go_os":"android","cgo_enabled": 1},
+            "config": [
+            {"go_arch": 386, "cc": "i686-linux-android21-clang"},
+            {"go_arch": "amd64", "cc": "x86_64-linux-android21-clang"},
+            {"go_arch": "arm64", "cc": "aarch64-linux-android21-clang"},
+            {"go_arch": "arm", "go_arm": 7, "cc": "armv7a-linux-androideabi21-clang"}
+            ]
+            }' | jq -c --raw-output '( .["common"] as $a | .["config"] as $b | [$a + $b[]] )')
+          echo include=$(echo "[${MATRIX_EASY},${MATRIX_DARWIN},${MATRIX_LINUX},${MATRIX_LINUX_ARM},${MATRIX_ANDROID}]" | jq -c --raw-output '.|flatten|sort_by(.go_os,.go_arch)') | tee -a $GITHUB_OUTPUT
+  process:
+    needs: [ vars ]
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.vars.outputs.include) }}
+      fail-fast: false
+    uses: ./.github/workflows/build.yml
+    with:
+      go_os: ${{ matrix.go_os }}
+      go_arch: ${{ matrix.go_arch }}
+      go_arm: ${{ matrix.go_arm }}
+      cgo_enabled: ${{ matrix.cgo_enabled }}
+      ar: ${{ matrix.ar }}
+      ranlib: ${{ matrix.ranlib }}
+      cc: ${{ matrix.cc }}
+
+  summary:
+    needs: [ process ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull artifacts
+        uses: actions/download-artifact@v3
+      - name: Info
+        run: |
+          echo "::group::md5sum"
+          find . -type f -exec md5sum {} \; | awk '{print $2,$1}' | sort
+          echo "::endgroup::"
+          echo "::group::ld"
+          find . -type f -exec ls -l {} \;
+          echo "::endgroup::"
+          echo "::group::file"
+          find . -type f -exec file {} \;
+          echo "::endgroup::"
+          echo "::group::stat"
+          find . -type f -exec stat {} \;
+          echo "::endgroup::"

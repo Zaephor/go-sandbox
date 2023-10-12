@@ -1,0 +1,128 @@
+on:
+  workflow_call:
+    inputs:
+      go_os:
+        required: false
+        type: string
+      go_arch:
+        required: false
+        type: string
+      go_arm:
+        required: false
+        type: string
+      cgo_enabled:
+        required: false
+        type: string
+      cc:
+        required: false
+        type: string
+      ar:
+        required: false
+        type: string
+      ranlib:
+        required: false
+        type: string
+
+jobs:
+  go_vars:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_name: "${{ steps.vars.outputs.artifact_name }}"
+      go_os: "${{ steps.vars.outputs.go_os }}"
+      go_arch: "${{ steps.vars.outputs.go_arch }}"
+      go_arm: "${{ steps.vars.outputs.go_arm }}"
+      cgo_enabled: "${{ steps.vars.outputs.cgo_enabled }}"
+      cc: "${{ steps.vars.outputs.cc }}"
+      ar: "${{ steps.vars.outputs.ar }}"
+      ranlib: "${{ steps.vars.outputs.ranlib }}"
+    steps:
+      - name: vars
+        id: vars
+        run: |
+          echo artifact_name=$(echo -e "${{ inputs.go_os }}\n${{ inputs.go_arch }}\n${{ inputs.go_arm }}" | jq -c --raw-input -s '[split("\n")[]|select(length>0)] | join("-")') | tee -a $GITHUB_OUTPUT
+          if [ -n "${{ inputs.go_os }}" ]; then echo go_os="${{ inputs.go_os }}" | tee -a $GITHUB_OUTPUT ; fi
+          if [ -n "${{ inputs.go_arch }}" ]; then echo go_arch="${{ inputs.go_arch }}" | tee -a $GITHUB_OUTPUT ; fi
+          if [ -n "${{ inputs.go_arm }}" ]; then echo go_arm="${{ inputs.go_arm }}" | tee -a $GITHUB_OUTPUT ; fi
+          if [ -n "${{ inputs.cgo_enabled }}" ]; then echo cgo_enabled="${{ inputs.cgo_enabled }}" | tee -a $GITHUB_OUTPUT ; fi
+          if [[ "${{ inputs.go_os }}" == "android" && "${{ inputs.cgo_enabled }}" == "1" ]]; then
+            if [ -n "${{ inputs.cc }}" ]; then echo cc="${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-$(uname -i)/bin/${{ inputs.cc }}" | tee -a $GITHUB_OUTPUT ; fi
+            echo ar="${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" | tee -a $GITHUB_OUTPUT
+            echo ranlib="${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib" | tee -a $GITHUB_OUTPUT
+          else
+            if [ -n "${{ inputs.ar }}" ]; then echo ar="${{ inputs.ar }}" | tee -a $GITHUB_OUTPUT ; fi
+            if [ -n "${{ inputs.cc }}" ]; then echo cc="${{ inputs.cc }}" | tee -a $GITHUB_OUTPUT ; fi
+            if [ -n "${{ inputs.ranlib }}" ]; then echo ranlib="${{ inputs.ranlib }}" | tee -a $GITHUB_OUTPUT ; fi
+          fi
+  test:
+    needs: [ go_vars ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Setup go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+      - name: Test project
+        env:
+          GOOS: ${{ needs.go_vars.outputs.go_os }}
+          GOARCH: ${{ needs.go_vars.outputs.go_arch }}
+          GOARM: ${{ needs.go_vars.outputs.go_arm }}
+          CGO_ENABLED: ${{ needs.go_vars.outputs.cgo_enabled }}
+          AR: ${{ needs.go_vars.outputs.ar }}
+          CC: ${{ needs.go_vars.outputs.cc }}
+          RANLIB: ${{ needs.go_vars.outputs.ranlib }}
+        run: |
+          echo "::group::Go Environment"
+          go env
+          echo "::endgroup::"
+          echo "::group::Testing"
+          go test
+          echo "::endgroup::"
+  build:
+    needs: [ go_vars, test ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Setup go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+      - name: Build project
+        env:
+          GOOS: ${{ needs.go_vars.outputs.go_os }}
+          GOARCH: ${{ needs.go_vars.outputs.go_arch }}
+          GOARM: ${{ needs.go_vars.outputs.go_arm }}
+          CGO_ENABLED: ${{ needs.go_vars.outputs.cgo_enabled }}
+          AR: ${{ needs.go_vars.outputs.ar }}
+          CC: ${{ needs.go_vars.outputs.cc }}
+          RANLIB: ${{ needs.go_vars.outputs.ranlib }}
+        run: |
+          echo "::group::Go Environment"
+          go env
+          echo "::endgroup::"
+          echo "::group::Building"
+          if [ ! -d dist ]; then
+            mkdir dist
+          fi
+          go build -trimpath -ldflags="-s -w" -o dist/
+          echo "::endgroup::"
+          echo "::group::Build Results"
+          md5sum dist/*
+          stat dist/*
+          echo "::endgroup::"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ fromJSON(needs.go_vars.outputs.artifact_name) }}
+          path: dist/
+          retention-days: 1
