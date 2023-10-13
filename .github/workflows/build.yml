@@ -39,7 +39,7 @@ jobs:
       - name: vars
         id: vars
         run: |
-          echo artifact_name=$(echo -e "${{ inputs.go_os }}\n${{ inputs.go_arch }}\n${{ inputs.go_arm }}" | jq -c --raw-input -s '[split("\n")[]|select(length>0)] | join("-")') | tee -a $GITHUB_OUTPUT
+          echo artifact_name=$(echo -e "${GITHUB_REPOSITORY#*/}\n${{ inputs.go_os }}\n${{ inputs.go_arch }}\n${{ inputs.go_arm }}" | jq -c --raw-input -s '[split("\n")[]|select(length>0)] | join("-")') | tee -a $GITHUB_OUTPUT
           if [ -n "${{ inputs.go_os }}" ]; then echo go_os="${{ inputs.go_os }}" | tee -a $GITHUB_OUTPUT ; fi
           if [ -n "${{ inputs.go_arch }}" ]; then echo go_arch="${{ inputs.go_arch }}" | tee -a $GITHUB_OUTPUT ; fi
           if [ -n "${{ inputs.go_arm }}" ]; then echo go_arm="${{ inputs.go_arm }}" | tee -a $GITHUB_OUTPUT ; fi
