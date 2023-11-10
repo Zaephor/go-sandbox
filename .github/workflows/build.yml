@@ -25,10 +25,15 @@ on:
       gh_runs_on:
         required: false
         type: string
+      gh_container_image:
+        required: false
+        type: string
 
 jobs:
   go_vars:
     runs-on: ${{ inputs.gh_runs_on || 'ubuntu-latest' }}
+    container:
+      image: ${{ inputs.gh_container_image || null }}
     outputs:
       artifact_name: "${{ steps.vars.outputs.artifact_name }}"
       go_os: "${{ steps.vars.outputs.go_os }}"
@@ -59,6 +64,8 @@ jobs:
   test:
     needs: [ go_vars ]
     runs-on: ${{ inputs.gh_runs_on || 'ubuntu-latest' }}
+    container:
+      image: ${{ inputs.gh_container_image || null }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,6 +96,8 @@ jobs:
   build:
     needs: [ go_vars, test ]
     runs-on: ${{ inputs.gh_runs_on || 'ubuntu-latest' }}
+    container:
+      image: ${{ inputs.gh_container_image || null }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
