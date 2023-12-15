@@ -133,7 +133,7 @@ jobs:
           stat dist/*
           echo "::endgroup::"
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ fromJSON(needs.go_vars.outputs.artifact_name) }}
           path: dist/
